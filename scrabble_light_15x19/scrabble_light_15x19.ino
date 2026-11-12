@@ -19,6 +19,10 @@ CRGB leds[NUM_LEDS];
 #define C_LDOUBLE    CRGB(0, 220, 255)        // Lettre Compte Double (Cyan lumineux pour contraster)
 #define C_START      CRGB(255, 200, 0)        // Case Départ / Étoile centrale (Or lumineux)
 
+// --- VARIABLES POUR LA TEMPO DE LA GOUTTE D'EAU ---
+unsigned long dernierDeclenchement = 0;
+const unsigned long INTERVALLE_GOUTTE = 120000; // 2 minutes en millisecondes (2 * 60 * 1000)
+
 // --- FONCTION DE GESTION DU ZIGZAG (15 colonnes de 19 LED) ---
 int XY(int x, int y_physique) {
   int i;
@@ -52,7 +56,61 @@ int obtenirLedPhysique(int y_logique) {
   return mapping[y_logique];
 }
 
-// --- ANIMATION ARC-EN-CIEL EN DIAGONALE ---
+// Fonction pour obtenir la couleur d'une case spécifique du Scrabble
+CRGB obtenirCouleurCase(int x, int y_logique) {
+  // Attribution géométrique des cases spéciales du Scrabble
+  if ((y_logique == 0 || y_logique == 7 || y_logique == 14) && (x == 0 || x == 7 || x == 14)) {
+    if (x == 7 && y_logique == 7) return C_START;
+    else return C_MTRIPLE;
+  }
+  else if (y_logique == 1 || y_logique == 13) {
+    if (x == 5 || x == 9) return C_LTRIPLE;
+    else if (x == 1 || x == 13) return C_MDOUBLE;
+  }
+  else if (y_logique == 2 || y_logique == 12) {
+    if (x == 2 || x == 12) return C_MDOUBLE;
+    else if (x == 6 || x == 8) return C_LDOUBLE;
+  }
+  else if (y_logique == 3 || y_logique == 11) {
+    if (x == 0 || x == 7 || x == 14) return C_LDOUBLE;
+    else if (x == 3 || x == 11) return C_MDOUBLE;
+  }
+  else if (y_logique == 4 || y_logique == 10) {
+    if (x == 4 || x == 10) return C_MDOUBLE;
+  }
+  else if (y_logique == 5 || y_logique == 9) {
+    if (x == 1 || x == 5 || x == 9 || x == 13) return C_LTRIPLE;
+  }
+  else if (y_logique == 6 || y_logique == 8) {
+    if (x == 2 || x == 6 || x == 8 || x == 12) return C_LDOUBLE;
+  }
+  else if (y_logique == 7) {
+    if (x == 0 || x == 14) return C_MTRIPLE;
+    else if (x == 3 || x == 11) return C_LDOUBLE;
+    else if (x == 7) return C_START;
+  }
+  return C_BLANCHE; // Case neutre
+}
+
+void dessinerPlateauScrabble() {
+  FastLED.clear();
+
+  // 1. Remplir TOUTES les LED du plateau en blanc (fond général et espaces intermédiaires)
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = C_BLANCHE;
+  }
+
+  // 2. Superposer les couleurs officielles des cases spéciales du Scrabble
+  for (int y_logique = 0; y_logique < 15; y_logique++) {
+    int y_physique = obtenirLedPhysique(y_logique);
+    for (int x = 0; x < 15; x++) {
+      int index = XY(x, y_physique);
+      leds[index] = obtenirCouleurCase(x, y_logique);
+    }
+  }
+}
+
+// --- ANIMATION ARC-EN-CIEL EN DIAGONALE (au démarrage) ---
 void animationArcEnCielDiagonale() {
   for (int j = 0; j < 120; j++) {
     for (int x = 0; x < COLS; x++) {
@@ -67,57 +125,50 @@ void animationArcEnCielDiagonale() {
   }
 }
 
-void dessinerPlateauScrabble() {
-  FastLED.clear();
+// --- ANIMATION GOUTTE D'EAU DEPUIS LE CENTRE ---
+void animationGoutteD_Eau() {
+  int centreX = 7;
+  int centreY = 7;
+  float maxDistance = 10.0; // Distance max approximative du centre vers les coins
 
-  // 1. Remplir TOUTES les LED du plateau en blanc (fond général et espaces intermédiaires)
-  for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = C_BLANCHE;
-  }
-
-  // 2. Superposer les couleurs officielles des cases spéciales du Scrabble aux bons endroits
-  for (int y_logique = 0; y_logique < 15; y_logique++) {
-    int y_physique = obtenirLedPhysique(y_logique);
-
-    for (int x = 0; x < 15; x++) {
-      int index = XY(x, y_physique);
-
-      // Attribution géométrique des cases spéciales du Scrabble
-      if ((y_logique == 0 || y_logique == 7 || y_logique == 14) && (x == 0 || x == 7 || x == 14)) {
-        if (x == 7 && y_logique == 7) {
-          leds[index] = C_START;   // Case Départ au centre
-        } else {
-          leds[index] = C_MTRIPLE; // Mots Compte Triple
-        }
-      }
-      else if (y_logique == 1 || y_logique == 13) {
-        if (x == 5 || x == 9) leds[index] = C_LTRIPLE;
-        else if (x == 1 || x == 13) leds[index] = C_MDOUBLE;
-      }
-      else if (y_logique == 2 || y_logique == 12) {
-        if (x == 2 || x == 12) leds[index] = C_MDOUBLE; // Corrigé : M2 (Violet)
-        else if (x == 6 || x == 8) leds[index] = C_LDOUBLE; // Corrigé : L2 (Cyan)
-      }
-      else if (y_logique == 3 || y_logique == 11) {
-        if (x == 0 || x == 7 || x == 14) leds[index] = C_LDOUBLE;
-        else if (x == 3 || x == 11) leds[index] = C_MDOUBLE;
-      }
-      else if (y_logique == 4 || y_logique == 10) {
-        if (x == 4 || x == 10) leds[index] = C_MDOUBLE; // Corrigé : M2 (Violet) au lieu de L2
-      }
-      else if (y_logique == 5 || y_logique == 9) {
-        if (x == 1 || x == 5 || x == 9 || x == 13) leds[index] = C_LTRIPLE;
-      }
-      else if (y_logique == 6 || y_logique == 8) {
-        if (x == 2 || x == 6 || x == 8 || x == 12) leds[index] = C_LDOUBLE;
-      }
-      else if (y_logique == 7) {
-        if (x == 0 || x == 14) leds[index] = C_MTRIPLE;
-        else if (x == 3 || x == 11) leds[index] = C_LDOUBLE;
-        else if (x == 7) leds[index] = C_START;
+  // On fait grandir l'onde du centre vers l'extérieur
+  for (float rayon = 0; rayon < maxDistance; rayon += 0.5) {
+    
+    // On redessine le plateau de base en arrière-plan
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i] = C_BLANCHE;
+    }
+    for (int y_logique = 0; y_logique < 15; y_logique++) {
+      int y_physique = obtenirLedPhysique(y_logique);
+      for (int x = 0; x < 15; x++) {
+        int index = XY(x, y_physique);
+        leds[index] = obtenirCouleurCase(x, y_logique);
       }
     }
+
+    // On illumine ou on fait briller les cases qui forment le contour de l'onde
+    for (int y_logique = 0; y_logique < 15; y_logique++) {
+      int y_physique = obtenirLedPhysique(y_logique);
+      for (int x = 0; x < 15; x++) {
+        // Calcul de la distance géométrique par rapport au centre (7, 7)
+        float distance = sqrt(pow(x - centreX, 2) + pow(y_logique - centreY, 2));
+
+        // Si la case se trouve sur le front de l'onde (avec une petite épaisseur)
+        if (abs(distance - rayon) < 0.8) {
+          int index = XY(x, y_physique);
+          // On prend la vraie couleur de la case du jeu, mais on la booste en blanc/lumineux pour l'effet d'onde
+          CRGB couleurOrigine = obtenirCouleurCase(x, y_logique);
+          leds[index] = couleurOrigine + CRGB(120, 120, 120); // Effet flash lumineux conservant la teinte
+        }
+      }
+    }
+    FastLED.show();
+    delay(50); // Vitesse d'expansion de l'onde
   }
+
+  // À la fin de l'animation, on remet proprement le plateau figé normal
+  dessinerPlateauScrabble();
+  FastLED.show();
 }
 
 void setup() {
@@ -125,13 +176,22 @@ void setup() {
   FastLED.setBrightness(BRIGHTNESS);
   
   // 1. Lance l'animation en diagonale dès l'allumage
+  animationArcEnCielDisagonaleSiBesoin : // (juste l'appel normal ci-dessous)
   animationArcEnCielDiagonale();
   
-  // 2. Affiche ensuite le plateau de Scrabble figé
+  // 2. Affiche ensuite le plateau de Scrabble figé et initialise le chrono
   dessinerPlateauScrabble();
   FastLED.show();
+  dernierDeclenchement = millis();
 }
 
 void loop() {
-  delay(1000);
+  // Vérifie si 2 minutes se sont écoulées
+  if (millis() - dernierDeclenchement >= INTERVALLE_GOUTTE) {
+    animationGoutteD_Eau();
+    dernierDeclenchement = millis(); // On reset le chronomètre
+  }
+  
+  // Petite pause pour ne pas surcharger le processeur de l'ESP32 / Arduino
+  delay(100);
 }
